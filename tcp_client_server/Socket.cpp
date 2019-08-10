@@ -1,5 +1,4 @@
 #include "Socket.h"
-
 void getSocketError() {
 	TCHAR* s = NULL;
 	FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, WSAGetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)& s, 0, NULL);
@@ -13,7 +12,7 @@ void StartWinSock(WSADATA* ws_data) {
 	else
 		printf("Success: WSAStartup!\n");
 }
-void CreateSocket(socket_data* socket_info, int family, int sock_type, int protocol) {
+void CreateSocket(socket_info* socket_info, int family, int sock_type, int protocol) {
 	socket_info->hints.ai_family = family;
 	socket_info->hints.ai_socktype = sock_type;
 	socket_info->hints.ai_protocol = protocol;
@@ -22,9 +21,11 @@ void CreateSocket(socket_data* socket_info, int family, int sock_type, int proto
 	else
 		printf("Success: CreateTCPSocket!\n");
 }
-void ConnectSocket(socket_data* socket_info, int family, int port, const TCHAR* ip_address) {
+void ConnectSocket(socket_info* socket_info, int family, int port, const TCHAR* ip_address) {
 	socket_info->addr.sin_family = family;
 	socket_info->addr.sin_port = htons(port);
+	struct hostent* host = NULL;
+
 	if (InetPton(family, ip_address, &socket_info->addr.sin_addr.s_addr)) {
 		if (SOCKET_ERROR == connect(socket_info->_socket, (sockaddr*)& socket_info->addr, sizeof(socket_info->addr)))
 			getSocketError();
@@ -32,7 +33,48 @@ void ConnectSocket(socket_data* socket_info, int family, int port, const TCHAR* 
 	else
 		getSocketError();
 }
-void BindSocket(socket_data* socket_info, unsigned short port, int family, const TCHAR* address)
+void ConnectSocket(socket_info* socket_info, char* port_str, const char* address) {
+	struct addrinfo* addrs;
+	if (NULL == getaddrinfo(address, port_str, &socket_info->hints, &addrs)) {
+		if (socket_info->_socket) {
+			CloseSocket(socket_info);
+		}
+		for (addrinfo* ptr = addrs; ptr != NULL; ptr = ptr->ai_next) {
+			if (SOCKET_ERROR == (socket_info->_socket = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol)))
+				getSocketError();
+			socket_info->hints = *ptr;
+			if (SOCKET_ERROR == connect(socket_info->_socket, socket_info->hints.ai_addr, socket_info->hints.ai_addrlen)) {
+				getSocketError();
+				CloseSocket(socket_info);
+				continue;
+			}
+			break;
+		}
+	}
+	else
+		getSocketError();
+	freeaddrinfo(addrs);
+}
+void BindSocket(socket_info* socket_info, char* port_str, const char* address) {
+	struct addrinfo* addrs;
+	if (0 == getaddrinfo(address, port_str, &socket_info->hints, &addrs)) {
+		if (socket_info->_socket) {
+			socket_info->hints.ai_family = addrs->ai_family;
+			socket_info->hints.ai_socktype = addrs->ai_socktype;
+			socket_info->hints.ai_protocol = addrs->ai_protocol;
+			CloseSocket(socket_info);
+			if (INVALID_SOCKET == (socket_info->_socket = socket(socket_info->hints.ai_family, socket_info->hints.ai_socktype, socket_info->hints.ai_protocol)))
+				getSocketError();
+		}
+		if (SOCKET_ERROR == bind(socket_info->_socket, (sockaddr*)& addrs->ai_addr, addrs->ai_addrlen))
+			getSocketError();
+	}
+	else
+		getSocketError();
+	freeaddrinfo(addrs);
+}
+
+void BindSocket(socket_info* socket_info, unsigned short port, int family, const TCHAR* address)
 {
 	socket_info->addr.sin_family = family;
 	socket_info->addr.sin_port = htons(port);
@@ -46,17 +88,17 @@ void BindSocket(socket_data* socket_info, unsigned short port, int family, const
 		getSocketError();
 	}
 }
-void SendSocketMessage(socket_data* socket_info, char* data, size_t size_data)
+void SendSocketMessage(socket_info* socket_info, char* data, size_t size_data)
 {
 	if (SOCKET_ERROR == send(socket_info->_socket, data, size_data, 0))
 		getSocketError();
 }
-void GetSocketMessage(socket_data* socket_info, char* data, size_t size_data)
+void GetSocketMessage(socket_info* socket_info, char* data, size_t size_data)
 {
 	int bytes_received = 0;
 	do
 	{
-		int bytes_received = recv(socket_info->_socket, (char*) data, size_data, 0);
+		int bytes_received = recv(socket_info->_socket, (char*)data, size_data, 0);
 		if (SOCKET_ERROR == bytes_received)
 		{
 			int res = WSAGetLastError();
@@ -68,13 +110,13 @@ void GetSocketMessage(socket_data* socket_info, char* data, size_t size_data)
 				printf("%c", data[i]);
 	} while (bytes_received != 0);
 }
-void SetNonBlockMode(socket_data* socket_info)
+void SetNonBlockMode(socket_info* socket_info)
 {
 	u_long argument = TRUE;
 	if (SOCKET_ERROR == ioctlsocket(socket_info->_socket, FIONBIO, &argument))
 		getSocketError();
 }
-void ListenSocket(socket_data* socket_info)
+void ListenSocket(socket_info* socket_info)
 {
 	if (listen(socket_info->_socket, SOMAXCONN)) {
 		getSocketError();
@@ -112,7 +154,7 @@ void ListenSocket(socket_data* socket_info)
 	closesocket(client_socket);
 }
 
-void CloseSocket(socket_data* socket_info)
+void CloseSocket(socket_info* socket_info)
 {
 	if (INVALID_SOCKET == (closesocket(socket_info->_socket)))
 		getSocketError();
@@ -127,7 +169,7 @@ void GetHostName(char* host_name, size_t length)
 		printf("Success: GetHostName!\n Result: %s\n", host_name);
 	}
 }
-void GetLocalIP(socket_data* socket_info)
+void GetLocalIP(socket_info* socket_info)
 {
 	struct addrinfo* addrs;
 	CHAR host_name[64];
